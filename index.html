@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Project Cost Monte Carlo Risk Analyzer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Excel + Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg,#f5f7fa 0%,#c3cfe2 100%);
+      margin: 0; padding: 20px;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; }
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      margin: 14px 0;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+    }
+    .row { display: flex; flex-wrap: wrap; gap: 14px; }
+    .col { flex: 1 1 220px; min-width: 200px; }
+    h1 {
+      margin: 0 0 4px;
+      background: linear-gradient(135deg,#0f62fe,#1e88ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    label {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 4px;
+      color: #111827;
+      font-weight: 500;
+    }
+    input, button {
+      font-size: 0.95rem;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 2px solid #e1e5e9;
+      width: 100%;
+      transition: all 0.2s;
+    }
+    input:focus {
+      outline: none;
+      border-color: #0f62fe;
+      box-shadow: 0 0 0 3px rgba(15,98,254,0.12);
+    }
+    button {
+      cursor: pointer;
+      background: linear-gradient(135deg,#0f62fe,#1e88ff);
+      color: #fff;
+      border: none;
+      font-weight: 600;
+      box-shadow: 0 3px 10px rgba(15,98,254,0.35);
+    }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 5px 14px rgba(15,98,254,0.45);
+    }
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+    button.secondary {
+      background: #fff;
+      color: #0f62fe;
+      border: 2px solid #0f62fe;
+      box-shadow: none;
+    }
+    button.secondary:hover:not(:disabled) {
+      background: #eff6ff;
+    }
+    .btnbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+    .upload-area {
+      border: 2px dashed #0f62fe;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      background: #f9fafb;
+      border-radius: 12px;
+      transition: all 0.2s;
+    }
+    .upload-area:hover, .upload-area.dragover {
+      background: #e5edff;
+      border-color: #1d4ed8;
+      transform: scale(1.01);
+    }
+    .status {
+      margin-top: 10px;
+      padding: 9px 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 500;
+    }
+    .status.success {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+    .status.error {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    canvas {
+      width: 100%;
+      height: 300px;
+      border-radius: 10px;
+      border: 1px solid #e5e7eb;
+      background: #fff;
+    }
+    .kpi {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin: 4px 0;
+    }
+    .kpi-label {
+      font-size: 0.85rem;
+      color: #4b5563;
+    }
+    .muted { color: #6b7280; font-size: 0.85rem; }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      background: #eff6ff;
+      color: #1d4ed8;
+      margin-left: 4px;
+    }
+    footer {
+      margin-top: 16px;
+      font-size: 0.8rem;
+      color: #6b7280;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Project Cost Monte Carlo Risk Analyzer</h1>
+    <p class="muted">Upload an Excel file, then run a full cost risk Monte Carlo analysis.</p>
+  </div>
+
+  <div class="card">
+    <h2>1. Input data</h2>
+    <div id="uploadArea" class="upload-area">
+      <p>📁 Upload Excel <span class="badge">Settings + Risks sheets</span></p>
+      <p class="muted">Click or drop .xlsx here</p>
+      <input type="file" id="fileInput" accept=".xlsx" style="display:none;">
+    </div>
+    <div id="uploadStatus" class="status" style="display:none;"></div>
+    <p class="muted">
+      Sheet "Settings": Working Budget, Contract Budget, Iterations. Sheet "Risks": Name, Probability, Low, Mode, High, Distribution.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>2. Parameters</h2>
+    <div class="row">
+      <div class="col">
+        <label for="currency">Currency</label>
+        <input id="currency" value="GBP">
+      </div>
+      <div class="col">
+        <label for="wb">Working Budget (WB, can be 0)</label>
+        <input id="wb" type="number" min="0" value="0">
+      </div>
+      <div class="col">
+        <label for="cb">Contract Budget (CB, can be 0)</label>
+        <input id="cb" type="number" min="0" value="0">
+      </div>
+      <div class="col">
+        <label for="iterations">Iterations</label>
+        <input id="iterations" type="number" min="100" value="1000">
+      </div>
+    </div>
+    <div class="btnbar">
+      <button id="runBtn" disabled>🚀 Run Monte Carlo</button>
+      <button id="rawBtn" class="secondary" disabled>📥 Download Raw CSV</button>
+      <button id="summaryBtn" class="secondary" disabled>📄 Download Summary CSV</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>3. Summary</h2>
+    <div class="row">
+      <div class="col">
+        <div class="kpi-label">Overrun Probability</div>
+        <div class="kpi" id="overProb">0.0%</div>
+        <div class="muted" id="overProbText">Pr(Total Cost &gt; Contract Budget)</div>
+      </div>
+      <div class="col">
+        <div class="kpi-label">Mean Total Cost</div>
+        <div class="kpi" id="meanCost">–</div>
+      </div>
+      <div class="col">
+        <div class="kpi-label">P50 / P80</div>
+        <div class="kpi" id="p50p80">– / –</div>
+      </div>
+    </div>
+    <div id="statsBlock" class="muted" style="margin-top:12px;">
+      No simulation run yet.
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>4. Visuals</h2>
+    <div class="row">
+      <div class="col">
+        <h3>Cost Distribution (Histogram)</h3>
+        <canvas id="histChart"></canvas>
+      </div>
+      <div class="col">
+        <h3>S-Curve (CDF)</h3>
+        <canvas id="cdfChart"></canvas>
+      </div>
+    </div>
+    <div style="margin-top:18px;">
+      <h3>Tornado Sensitivity (Top Drivers)</h3>
+      <canvas id="tornadoChart"></canvas>
+    </div>
+    <div class="btnbar" style="margin-top:10px;">
+      <button id="dlHist" class="secondary">Download Histogram PNG</button>
+      <button id="dlCDF" class="secondary">Download S-Curve PNG</button>
+      <button id="dlTornado" class="secondary">Download Tornado PNG</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>5. Visitor metric</h2>
+    <p class="muted">
+      👥 Visitors today: <span id="visitorCount">0</span>
+    </p>
+  </div>
+
+  <footer>
+    Built by Nikhil Dhand – Open source software
+  </footer>
+</div>
+
+<script>
+  // Visitor counter
+  (function() {
+    const key = 'mcra_visitors';
+    const today = new Date().toISOString().slice(0,10);
+    let data;
+    try { data = JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) { data = {}; }
+    if (!data[today]) data[today] = 0;
+    data[today] += 1;
+    localStorage.setItem(key, JSON.stringify(data));
+    document.getElementById('visitorCount').textContent = data[today];
+  })();
+
+  let risks = [];
+  let wb = 0, cb = 0, itersDefault = 1000;
+  let totals = [];
+  let contribs = [];
+  let histChart, cdfChart, tornadoChart;
+
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInput = document.getElementById('fileInput');
+  const uploadStatus = document.getElementById('uploadStatus');
+  const runBtn = document.getElementById('runBtn');
+  const rawBtn = document.getElementById('rawBtn');
+  const summaryBtn = document.getElementById('summaryBtn');
+  const dlHist = document.getElementById('dlHist');
+  const dlCDF = document.getElementById('dlCDF');
+  const dlTornado = document.getElementById('dlTornado');
+
+  uploadArea.addEventListener('click', () => fileInput.click());
+  uploadArea.addEventListener('dragover', e => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+  uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+  uploadArea.addEventListener('drop', e => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files.length) handleFile(e.target.files[0]);
+  });
+
+  function setStatus(msg, ok=true) {
+    uploadStatus.style.display = 'block';
+    uploadStatus.textContent = msg;
+    uploadStatus.className = 'status ' + (ok ? 'success' : 'error');
+  }
+
+  function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        const wbX = XLSX.read(data, {type: 'array'});
+        parseWorkbook(wbX);
+        setStatus('Excel loaded successfully.');
+        runBtn.disabled = false;
+      } catch(err) {
+        console.error(err);
+        setStatus('Failed to read Excel file.', false);
+        runBtn.disabled = true;
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function parseWorkbook(workbook) {
+    risks = [];
+    const settingsSheet = workbook.Sheets['Settings'];
+    const risksSheet = workbook.Sheets['Risks'];
+    if (!settingsSheet || !risksSheet) {
+      throw new Error('Missing Settings or Risks sheet');
+    }
+
+    const settings = XLSX.utils.sheet_to_json(settingsSheet, {header:1});
+    settings.forEach(row => {
+      const key = String(row[0] || '').toLowerCase();
+      if (key.includes('working budget')) wb = Number(row[1]) || 0;
+      if (key.includes('contract budget')) cb = Number(row[1]) || 0;
+      if (key.includes('iterations')) itersDefault = Number(row[1]) || 1000;
+    });
+    document.getElementById('wb').value = wb;
+    document.getElementById('cb').value = cb;
+    document.getElementById('iterations').value = itersDefault;
+
+    const rdata = XLSX.utils.sheet_to_json(risksSheet, {header:1});
+    const header = rdata[0].map(h => String(h || '').toLowerCase());
+    const idxName = header.indexOf('name');
+    const idxP = header.indexOf('probability');
+    const idxLow = header.indexOf('low');
+    const idxMode = header.indexOf('mode');
+    const idxHigh = header.indexOf('high');
+    const idxDist = header.indexOf('distribution');
+
+    for (let i = 1; i < rdata.length; i++) {
+      const row = rdata[i];
+      if (!row || row.length === 0) continue;
+      const name = row[idxName];
+      if (!name) continue;
+      const p = Number(row[idxP]) || 0;
+      const low = Number(row[idxLow]) || 0;
+      const mode = Number(row[idxMode]) || 0;
+      const high = Number(row[idxHigh]) || 0;
+      const dist = String(row[idxDist] || '').toLowerCase();
+      risks.push({name, p, low, mode, high, dist});
+    }
+  }
+
+  function randUniform() { return Math.random(); }
+
+  function randTriangular(min, mode, max) {
+    const u = randUniform();
+    const span = max - min || 1;
+    const c = (mode - min) / span;
+    if (u < c) {
+      return min + Math.sqrt(u * span * (mode - min));
+    } else {
+      return max - Math.sqrt((1 - u) * span * (max - mode));
+    }
+  }
+
+  function summaryStats(arr) {
+    const N = arr.length;
+    if (!N) return null;
+    const sorted = [...arr].sort((a,b) => a - b);
+    const min = sorted[0];
+    const max = sorted[N-1];
+    const mean = sorted.reduce((s,x) => s + x, 0) / N;
+    const varSum = sorted.reduce((s,x) => s + Math.pow(x - mean, 2), 0);
+    const variance = varSum / (N - 1);
+    const std = Math.sqrt(variance);
+    const skew = sorted.reduce((s, x) => s + Math.pow((x - mean) / (std || 1), 3), 0) / N;
+    const kurt = sorted.reduce((s, x) => s + Math.pow((x - mean) / (std || 1), 4), 0) / N;
+    const median = N % 2 ? sorted[(N-1)/2] : 0.5 * (sorted[N/2-1] + sorted[N/2]);
+
+    function percentile(p) {
+      const idx = p * (N - 1);
+      const i0 = Math.floor(idx);
+      const i1 = Math.ceil(idx);
+      const w = idx - i0;
+      return (1 - w) * sorted[i0] + w * sorted[i1];
+    }
+
+    const pList = [0.05,0.1,0.15,0.2,0.25,0.3,0.35,0.4,0.45,0.5,
+                   0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95];
+    const pct = {};
+    pList.forEach(p => pct[p] = percentile(p));
+
+    return {min, max, mean, variance, std, skewness: skew, kurtosis: kurt, median, percentiles: pct};
+  }
+
+  function fmtMoney(x, cur) {
+    if (x == null || isNaN(x)) return '–';
+    return cur + ' ' + x.toLocaleString(undefined, {maximumFractionDigits:0});
+  }
+
+  function buildTornado(N, totals, contribs, riskList) {
+    const pTail = 0.1;
+    const drivers = [];
+    for (let r = 0; r < riskList.length; r++) {
+      const name = riskList[r].name;
+      const pairs = [];
+      for (let i = 0; i < N; i++) {
+        pairs.push({v: contribs[r][i], y: totals[i]});
+      }
+      pairs.sort((a,b) => a.v - b.v);
+      const tailCount = Math.max(1, Math.floor(N * pTail));
+      const lowSlice = pairs.slice(0, tailCount);
+      const highSlice = pairs.slice(N - tailCount);
+      const meanLow = lowSlice.reduce((s,p) => s + p.y, 0) / lowSlice.length;
+      const meanHigh = highSlice.reduce((s,p) => s + p.y, 0) / highSlice.length;
+      drivers.push({name, lower: meanLow, upper: meanHigh, delta: Math.abs(meanHigh - meanLow)});
+    }
+    drivers.sort((a,b) => b.delta - a.delta);
+    return drivers.slice(0, Math.min(20, drivers.length));
+  }
+
+  runBtn.addEventListener('click', () => {
+    wb = Number(document.getElementById('wb').value) || 0;
+    cb = Number(document.getElementById('cb').value) || 0;
+    const N = Math.max(100, Number(document.getElementById('iterations').value) || 1000);
+    document.getElementById('iterations').value = N;
+
+    totals = new Array(N);
+    contribs = risks.map(() => new Array(N));
+    const baseCost = wb;
+
+    for (let i = 0; i < N; i++) {
+      let total = baseCost;
+      for (let r = 0; r < risks.length; r++) {
+        const risk = risks[r];
+        let contrib = 0;
+        if (Math.random() < risk.p) {
+          contrib = randTriangular(risk.low, risk.mode, risk.high);
+        }
+        total += contrib;
+        contribs[r][i] = contrib;
+      }
+      totals[i] = total;
+    }
+
+    renderResults(N);
+    rawBtn.disabled = false;
+    summaryBtn.disabled = false;
+  });
+
+  function renderResults(N) {
+    const cur = document.getElementById('currency').value || 'GBP';
+    const stats = summaryStats(totals);
+    if (!stats) return;
+
+    const over = cb > 0 ? totals.filter(x => x > cb).length / totals.length : 0;
+    document.getElementById('overProb').textContent = (over * 100).toFixed(1) + '%';
+    document.getElementById('overProbText').textContent = cb > 0 ?
+      'Pr(Total Cost > Contract Budget)' :
+      'Contract Budget is 0; overrun probability not meaningful';
+
+    document.getElementById('meanCost').textContent = fmtMoney(stats.mean, cur);
+    const p50 = stats.percentiles[0.5];
+    const p80 = stats.percentiles[0.8];
+    document.getElementById('p50p80').textContent =
+      fmtMoney(p50, cur) + ' / ' + fmtMoney(p80, cur);
+
+    const sb = document.getElementById('statsBlock');
+    const pct = stats.percentiles;
+    sb.textContent = [
+      'Summary statistics (simulated ' + N + ' iterations):',
+      'Min: ' + fmtMoney(stats.min, cur),
+      'Max: ' + fmtMoney(stats.max, cur),
+      'Mean: ' + fmtMoney(stats.mean, cur),
+      'Std Dev: ' + fmtMoney(stats.std, cur) + ', Variance: ' + stats.variance.toFixed(0),
+      'Skewness: ' + stats.skewness.toFixed(3) + ', Kurtosis: ' + stats.kurtosis.toFixed(3),
+      'Percentiles: P05=' + fmtMoney(pct[0.05], cur) +
+      ', P10=' + fmtMoney(pct[0.10], cur) +
+      ', P20=' + fmtMoney(pct[0.20], cur) +
+      ', P50=' + fmtMoney(pct[0.50], cur) +
+      ', P80=' + fmtMoney(pct[0.80], cur) +
+      ', P95=' + fmtMoney(pct[0.95], cur)
+    ].join(' | ');
+
+    renderHist(cur);
+    renderCDF(cur);
+    renderTornado(cur, N);
+  }
+
+  function renderHist(cur) {
+    const bins = 30;
+    const min = Math.min(...totals);
+    const max = Math.max(...totals);
+    const width = (max - min || 1) / bins;
+    const counts = new Array(bins).fill(0);
+    totals.forEach(v => {
+      let idx = Math.floor((v - min) / width);
+      if (idx >= bins) idx = bins - 1;
+      if (idx < 0) idx = 0;
+      counts[idx]++;
+    });
+    const labels = counts.map((_, i) => {
+      const a = min + i * width;
+      const b = a + width;
+      return fmtMoney(a, cur) + ' – ' + fmtMoney(b, cur);
+    });
+
+    const ctx = document.getElementById('histChart').getContext('2d');
+    if (histChart) histChart.destroy();
+    histChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Frequency',
+          data: counts,
+          backgroundColor: 'rgba(37,99,235,0.6)'
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 90, minRotation: 45 } },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  function renderCDF(cur) {
+    const sorted = [...totals].sort((a,b) => a - b);
+    const N = sorted.length;
+    const xs = [];
+    const ys = [];
+    for (let i = 0; i < N; i++) {
+      xs.push(sorted[i]);
+      ys.push((i+1)/N);
+    }
+    const ctx = document.getElementById('cdfChart').getContext('2d');
+    if (cdfChart) cdfChart.destroy();
+    cdfChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: xs.map(v => fmtMoney(v, cur)),
+        datasets: [{
+          label: 'CDF',
+          data: ys,
+          borderColor: 'rgba(16,185,129,1)',
+          borderWidth: 2,
+          pointRadius: 0
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { maxRotation: 90, minRotation: 45 } },
+          y: { beginAtZero: true, max: 1 }
+        }
+      }
+    });
+  }
+
+  function renderTornado(cur, N) {
+    const drivers = buildTornado(N, totals, contribs, risks);
+    const labels = drivers.map(d => d.name);
+    const deltas = drivers.map(d => d.delta);
+    const ctx = document.getElementById('tornadoChart').getContext('2d');
+    if (tornadoChart) tornadoChart.destroy();
+    tornadoChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Impact on mean output',
+          data: deltas,
+          backgroundColor: 'rgba(249,115,22,0.7)'
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true } }
+      }
+    });
+  }
+
+  function download(filename, text) {
+    const blob = new Blob([text], {type: 'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  rawBtn.addEventListener('click', () => {
+    if (!totals.length) return;
+    let csv = 'Iteration,Total';
+    risks.forEach(r => { csv += ',' + r.name; });
+    csv += '\n';
+    for (let i = 0; i < totals.length; i++) {
+      let row = (i+1) + ',' + totals[i];
+      for (let r = 0; r < risks.length; r++) {
+        row += ',' + contribs[r][i];
+      }
+      csv += row + '\n';
+    }
+    download('mc_raw.csv', csv);
+  });
+
+  summaryBtn.addEventListener('click', () => {
+    if (!totals.length) return;
+    const stats = summaryStats(totals);
+    const N = totals.length;
+    const over = cb > 0 ? totals.filter(x => x > cb).length / totals.length : 0;
+    const p = stats.percentiles;
+    let csv = 'Metric,Value\n';
+    csv += 'BuiltBy,"Nikhil Dhand – Open source software"\n';
+    csv += 'Iterations,' + N + '\n';
+    csv += 'WorkingBudget,' + wb + '\n';
+    csv += 'ContractBudget,' + cb + '\n';
+    csv += 'Min,' + stats.min + '\n';
+    csv += 'Max,' + stats.max + '\n';
+    csv += 'Mean,' + stats.mean + '\n';
+    csv += 'StdDev,' + stats.std + '\n';
+    csv += 'Variance,' + stats.variance + '\n';
+    csv += 'Skewness,' + stats.skewness + '\n';
+    csv += 'Kurtosis,' + stats.kurtosis + '\n';
+    csv += 'P05,' + p[0.05] + '\n';
+    csv += 'P10,' + p[0.10] + '\n';
+    csv += 'P20,' + p[0.20] + '\n';
+    csv += 'P50,' + p[0.50] + '\n';
+    csv += 'P80,' + p[0.80] + '\n';
+    csv += 'P95,' + p[0.95] + '\n';
+    csv += 'OverrunProbability,' + over + '\n';
+    download('mc_summary.csv', csv);
+  });
+
+  function downloadChartPng(chart, filename) {
+    if (!chart) return;
+    const link = document.createElement('a');
+    link.href = chart.toBase64Image('image/png', 1.0);
+    link.download = filename;
+    link.click();
+  }
+
+  dlHist.addEventListener('click', () => downloadChartPng(histChart, 'histogram.png'));
+  dlCDF.addEventListener('click', () => downloadChartPng(cdfChart, 's_curve.png'));
+  dlTornado.addEventListener('click', () => downloadChartPng(tornadoChart, 'tornado.png'));
+</script>
+</body>
+</html>
